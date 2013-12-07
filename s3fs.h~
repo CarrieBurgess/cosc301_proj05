@@ -34,7 +34,6 @@ typedef struct {
 	char name[256]; //path name
 	int size; //will be set amount for directory...?	
 	char parent[256]; //do we want this?
-	mode_t mode;
 } s3dirent_t;
 	
 

@@ -73,6 +73,7 @@ int main(int argc, char **argv) {
         printf("Successfully put test object in s3 (s3fs_put_object)\n");
     }
 
+
     uint8_t *retrieved_object = NULL;
     // zeroes as last two args means that we want to retrieve entire object
     rv = s3fs_get_object(s3bucket, test_key, &retrieved_object, 0, 0);

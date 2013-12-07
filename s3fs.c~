@@ -7,8 +7,6 @@ The reasoning behind this wonderous project: required.  And to make a virtualali
 
 QUESTION:  do we have to resize each directory every time we include a directory underneath it?  (are the children part of the metadata, so when we add a child file or directory, do we need to change the size of the parent)
 
-QUESTION: do we destroy everything in the bucket for the destroy function?
-
 */
 
 
