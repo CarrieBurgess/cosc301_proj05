@@ -169,6 +169,15 @@ int fs_releasedir(const char *path, struct fuse_file_info *fi) {
  * use mode|S_IFDIR.
  */
  
+ 
+int is_there(s3dirent_t obj, char * name) {
+	if(strcmp(obj.name, name)==0) {
+		return 1; //found a match!
+	}
+	else {
+		return 0; //didn't find a match...
+	}
+} 
 
 void rec_check(char *path, mode_t mode) {  
 //return -1 on error, 1 if successfully added directory
@@ -176,32 +185,89 @@ void rec_check(char *path, mode_t mode) {
 		return;
 	}
 	char *dir = dirname(path);
-	char *base = basename(path);
+//	char *base = basename(path);
 	rec_check(dir, mode);	
-	uint8_t ** buf;
+	uint8_t ** buf; //buf is the base directory.  I think this is malloced.  
 	ssize_t s3fs_get_object(S3BUCKET, dir, buf, 0, 0);
 	(s3dirent_t)buf;
+	int size = sizeof(buf)/sizeof(s3dirent_t);
+	int i = 0;
+	int j = 0;
+	int unused = 0;
+	int loc_unused = 0;
+	for(; i<size; i++) {
+		j = is_there(buf[i], path); 
+		if(buf[i].type == 'u') {
+			unused = 1;
+			loc_unused = i;
+		}
+		if(j==1) { //found it, don't need to look any more
+			return;
+		}
+	}
+	//if got to this point, then object we are looking for doesn't exist/ we have to make it
 	
+	//make new key and obj
+	s3dirent_t* new = malloc(sizeof(s3dirent_t)*1); //malloced
+    strcpy(new[0].name, "."); //malloced
+    new[0].type = 'd';
+    new[0].mode = mode;
+    new[0].size = sizeof(new);
+    new[0].uid = getuid();
+    new[0].gid = getgid();
+    time_t t;
+    time(&t);
+    new[0].access_time = t;
+    ssize_t rv = s3fs_put_object(S3BUCKET, path, (uint8_t*)new, sizeof(new));
+    if (rv < 0) {
+        printf("Failure in s3fs_put_object\n");
+    } 
+    else if (rv < new[0].size) {
+        printf("Failed to upload full test object (s3fs_put_object %d)\n", rv);
+    } 
+    else {
+        printf("Successfully put test object in s3 (s3fs_put_object)\n");
+    }
+
+	//now update current directory
+	if(unused==1) { //a previous directory was 'deleted', so we can use the space	
+		strcpy(buf[loc_unused].name, path); //malloced
+	    buf[loc_unused].type = 'd';
+	    //rest of metadata in other key's '.'
+   	 	ssize_t rv = s3fs_put_object(S3BUCKET, dir, (uint8_t*)buf, sizeof(buf));
+    	if (rv < 0) {
+       	 	printf("Failure in s3fs_put_object\n");
+    	} 
+    	else if (rv < buf[0].size) {
+        	printf("Failed to upload full test object (s3fs_put_object %d)\n", rv);
+    	} 
+    	else {
+        	printf("Successfully put test object in s3 (s3fs_put_object)\n");
+    	}
+    	return; //made new key, updated current cd: all done!	
+	}
 	
-	/*
-	for /x/y/z/w
-	root exists
-	x exits
-	y exists
-	z and w don't yet
-	
-	/x/y/z/w
-	/x/y/z
-	/x/y
-	/x
-	/==.
-	
-	check if x
-	if x exists, recturn 1
-	if y exists in x, 
-	
-	*/
-	
+	//so there wasn't an unused space....
+	s3dirent_t* new_curdir = malloc(sizeof(s3dirent_t)*(size+1)); //malloc
+	i=0;
+	for(; i<size; i++) { //rewriting info already there
+		new_curdir[i] = buf[i]; //copy over what is there
+	}	
+		
+	strcpy(new_curdir[i+1].name, path); //malloced
+    new_curdir[i+1].type = 'd';
+    //rest of metadata in new key's '.'
+    ssize_t rv = s3fs_put_object(S3BUCKET, dir, (uint8_t*)new_curdir, sizeof(new_curdir));
+    if (rv < 0) {
+        printf("Failure in s3fs_put_object\n");
+    } 
+    else if (rv < new[0].size) {
+        printf("Failed to upload full test object (s3fs_put_object %d)\n", rv);
+    } 
+    else {
+        printf("Successfully put test object in s3 (s3fs_put_object)\n");
+    }	
+	return;	
 }
  
  
@@ -209,8 +275,7 @@ int fs_mkdir(const char *path, mode_t mode) {
     fprintf(stderr, "fs_mkdir(path=\"%s\", mode=0%3o)\n", path, mode);
     s3context_t *ctx = GET_PRIVATE_DATA;
     mode |= S_IFDIR; //permissions for all directories besides root
-    char * dir_name = dirname(path);
-    
+    rec_check(path, mode);
     /*
     
     
