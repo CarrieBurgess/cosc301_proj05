@@ -6,6 +6,17 @@ The reasoning behind this wonderous project: required.  And to make a virtualali
 
 
 QUESTION:  do we have to resize each directory every time we include a directory underneath it?  (are the children part of the metadata, so when we add a child file or directory, do we need to change the size of the parent)
+-Don't even need size of directories.  IF want, though, don't need grandchildren per se.  If "/" has test.txt, ., and X, then would have size 3 (if wanted size)
+
+QUESTION: do we destroy everything in the bucket for the destroy function?
+--> use s3 clear bucket.  **For destroy, don't really need to do much beyond what is written.*  
+
+SHOULDN'T HAVE GLOBAL VARIABLES.  
+
+How to cycle through key/objects in s3: say want /x/y
+-- first get root directory, find if there is an x directory (as know full path).  then go to /x, cycle through to make sure y doesn't exist, make new dirent, write to s3, update/ write /x to s3
+
+
 
 */
 
@@ -32,6 +43,9 @@ QUESTION:  do we have to resize each directory every time we include a directory
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/xattr.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <time.h>
 
 #define GET_PRIVATE_DATA ((s3context_t *) fuse_get_context()->private_data)
 
@@ -60,22 +74,28 @@ void *fs_init(struct fuse_conn_info *conn)
     s3context_t *ctx = GET_PRIVATE_DATA;
     printf(S3BUCKET);
     s3fs_clear_bucket(S3BUCKET);
-    s3dirent_t root; // = malloc(sizeof(s3dirent_t)); //***Does this need to be malloced?
-    strcpy(root.name, "/");
-    strcpy(root.parent, "/0"); //will have to remember to free these!!!
-    root.type = 'd';
-    root.mode = (S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR);
-    root.size = sizeof(root);
-    ssize_t rv = s3fs_put_object(S3BUCKET, S3SECRETKEY, (uint8_t*)root, root.size);
+    s3dirent_t* root = malloc(sizeof(s3dirent_t)*1); //malloced
+    strcpy(root[0].name, "."); //malloced
+    root[0].type = 'd';
+    root[0].mode = (S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR);
+    root[0].size = sizeof(root);
+    root[0].uid = getuid();
+    root[0].gid = getgid();
+    time_t t;
+    time(&t);
+    root[0].access_time = t;
+    size_t rv = s3fs_put_object(S3BUCKET, "/", (uint8_t*)root, sizeof(root));
     if (rv < 0) {
         printf("Failure in s3fs_put_object\n");
     } 
-    else if (rv < root.size) {
+    else if (rv < root[0].size) {
         printf("Failed to upload full test object (s3fs_put_object %d)\n", rv);
     } 
     else {
         printf("Successfully put test object in s3 (s3fs_put_object)\n");
     }
+    free(root[0].name);
+    free(root);
     return ctx; //****What does this do???
 }
 
@@ -148,11 +168,57 @@ int fs_releasedir(const char *path, struct fuse_file_info *fi) {
  * correct directory type bits (for setting in the metadata)
  * use mode|S_IFDIR.
  */
+ 
+
+int rec_check(char *path, mode_t mode) {  
+//return -1 on error, 1 if successfully added directory
+	if((path == "/") || (path==NULL) || (dirname(path)==".")) {
+		return 0;
+	}
+	char *dir = dirname(path);
+	char *base = basename(path);
+	int check = rec_check(dir, mode);
+	
+	
+	/*
+	for /x/y/z/w
+	root exists
+	x exits
+	y exists
+	z and w don't yet
+	
+	/x/y/z/w
+	/x/y/z
+	/x/y
+	/x
+	/==.
+	
+	check if x
+	if x exists, recturn 1
+	if y exists in x, 
+	
+	*/
+	
+}
+ 
+ 
 int fs_mkdir(const char *path, mode_t mode) {
     fprintf(stderr, "fs_mkdir(path=\"%s\", mode=0%3o)\n", path, mode);
     s3context_t *ctx = GET_PRIVATE_DATA;
     mode |= S_IFDIR; //permissions for all directories besides root
+    char * dir_name = dirname(path);
     
+    /*
+    
+    
+    make recursive function to call dirname starting at base, make sure exists.  If does, go one level up.  Either that or for loop.
+    
+    After checking that path up to new dir exists, and that new dir name isn't already at current path, then make new key/value thingamajig, put that in outer space.  Then go through, make parent dir +1 (num dirent = size/ sizeof(s3dirent_t) for how many already there), then remalloc all over and add in extra info at end.  Put in outer space, free shtuff
+    
+    
+    */
+    
+    /*
     char * dirname = dirname(path); 
     int base_dir_exits = 0;
     //need to make this a loop through everything in bucket
@@ -211,6 +277,7 @@ int fs_mkdir(const char *path, mode_t mode) {
     else {
         printf("Successfully put test object in s3 (s3fs_put_object)\n");
     }
+    */
     
     return -EIO;
 }

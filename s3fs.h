@@ -31,10 +31,13 @@ typedef struct {
  */
 typedef struct {
 	char type; //this will be f=file, d=directory, u=unused
-	char name[256]; //path name
-	int size; //will be set amount for directory...?	
-	char parent[256]; //do we want this?
-	mode_t mode;
+	char name[256]; //path name --> object name, key elsewhere if want to look up
+	int size; //This is mainly for file size	
+	mode_t mode; //permissions
+	uid_t uid; //user id
+	gid_t gid; //group id
+	time_t access_time; //access time for files
+//	time_t mod_time; //modification time	 - can add later if helps
 } s3dirent_t;
 	
 
