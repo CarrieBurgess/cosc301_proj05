@@ -4,33 +4,17 @@ The date of glorious completion: COLGATE DAY 13 Dec 2013
 The reasoning behind this wonderous project: required.  And to make a virtualalized directory/ file system that looks localized to the user
 
 
-
-QUESTION:  do we have to resize each directory every time we include a directory underneath it?  (are the children part of the metadata, so when we add a child file or directory, do we need to change the size of the parent)
--Don't even need size of directories.  IF want, though, don't need grandchildren per se.  If "/" has test.txt, ., and X, then would have size 3 (if wanted size)
-
-QUESTION: do we destroy everything in the bucket for the destroy function?
---> use s3 clear bucket.  **For destroy, don't really need to do much beyond what is written.*  
-
-SHOULDN'T HAVE GLOBAL VARIABLES.  
-
 How to cycle through key/objects in s3: say want /x/y
 -- first get root directory, find if there is an x directory (as know full path).  then go to /x, cycle through to make sure y doesn't exist, make new dirent, write to s3, update/ write /x to s3
 
 
-
-
-
 SHREEYA!!!   I tried to block off everything I modified, so if one or both of us is decoding, you can just comment out the appropriate chunks.  Just make sure that there is a "return -EIO" at the end of the function if it needs to return something when checking.
-
 
 Things I likely missed:
 -freeing everything
 -assigning all the components of the s3dirent_t
 -error message (especially with the outputs for get_object and put_object)
 */
-
-
-
 
 
 /* This code is based on the fine code written by Joseph Pfeiffer for his
@@ -102,12 +86,12 @@ void *fs_init(struct fuse_conn_info *conn)
         printf("Failure in s3fs_put_object\n");
     } 
     else if (rv < root[0].size) {
-        printf("Failed to upload full test object (s3fs_put_object %d)\n", rv);
+        printf("Failed to upload full test object (s3fs_put_object %zd)\n", rv);
     } 
     else {
         printf("Successfully put test object in s3 (s3fs_put_object)\n");
     }
-    free(root[0].name);
+    //free(root[0].name);
     free(root);
     return ctx; //****What does this do???
     ////////////////////////Carrie and Shreeya
@@ -123,7 +107,7 @@ void fs_destroy(void *userdata) {
 }
 
  //Carrie written function
-int is_there(s3dirent_t obj, char * name) {
+int is_there(s3dirent_t obj, const char * name) {
 	if(strcmp(obj.name, name)==0) {
 		return 1; //found a match!
 	}
@@ -141,16 +125,18 @@ int is_there(s3dirent_t obj, char * name) {
  */
 
 int fs_getattr(const char *path, struct stat *statbuf) {
+//should return somthing on success
     fprintf(stderr, "fs_getattr(path=\"%s\")\n", path);
     s3context_t *ctx = GET_PRIVATE_DATA;  
     
     ///////////////Carrie code
-    int rv;
+    //int rv;
     //first need to check if it is a file or directory:
     char * dircpy = strdup(path); //copying so I don't change the original
     char* dir = dirname(dircpy);
     uint8_t *buffer = NULL;
-    rv = s3fs_get_object(ctx->s3bucket, dir, &buffer, 0, 0);
+    //ssize_t rv = s3fs_get_object(ctx->s3bucket, dir, &buffer, 0, 0);
+	s3fs_get_object(ctx->s3bucket, dir, &buffer, 0, 0);
     int size = sizeof(buffer)/sizeof(s3dirent_t);
     s3dirent_t* buf = (s3dirent_t*)malloc(sizeof(s3dirent_t)*size); //malloced
     buf = (s3dirent_t *)buffer; //filled in?
@@ -160,39 +146,40 @@ int fs_getattr(const char *path, struct stat *statbuf) {
     		break;
     	}
     }
-    struct stat* stat;
+    struct stat *st = malloc(sizeof(struct stat));
     if(buf[i].type=='f') { //it was a file, metadata stored here:
-    	stat->st_mode = buf[i].mode;
+    	st->st_mode = buf[i].mode;
 //    	stat->st_nlink = NULL;
-    	stat->st_uid = buf[i].uid;
-    	stat->st_gid = buf[i].gid;
+    	st->st_uid = buf[i].uid;
+    	st->st_gid = buf[i].gid;
 //    	stat->st_rdev = NULL;
-    	stat->st_size = (off_t)buf[i].size;
+    	st->st_size = (off_t)buf[i].size;
 //    	stat->st_blocks = NULL;
-    	stat->st_atime = buf[i].access_time;
+    	st->st_atime = buf[i].access_time;
 //    	stat->st_mtime = NULL;
 //    	stat->st_ctime = NULL;
     }
     else if(buf[i].type=='d') { //was a directory, go find metadata there
     	uint8_t *buffer2= NULL;
-    	rv = s3fs_get_object(ctx->s3bucket, path, &buffer2, 0, sizeof(s3dirent_t)); //only gets first entry, '.'
+    	s3fs_get_object(ctx->s3bucket, path, &buffer2, 0, sizeof(s3dirent_t)); //only gets first entry, '.'
     	s3dirent_t* tmp = (s3dirent_t*)malloc(sizeof(s3dirent_t)*1); //malloced
     	tmp = (s3dirent_t *)buffer2;
-    	stat->st_mode = tmp[0].mode;
+    	st->st_mode = tmp[0].mode;
 //    	stat->st_nlink = NULL;
-    	stat->st_uid = tmp[0].uid;
-    	stat->st_gid = tmp[0].gid;
+    	st->st_uid = tmp[0].uid;
+    	st->st_gid = tmp[0].gid;
 //    	stat->st_rdev = NULL;
-    	stat->st_size = (off_t)tmp[0].size;
+    	st->st_size = (off_t)tmp[0].size;
 //    	stat->st_blocks = NULL;
-    	stat->st_atime = tmp[0].access_time;
+    	st->st_atime = tmp[0].access_time;
 //    	stat->st_mtime = NULL;
 //    	stat->st_ctime = NULL;
 		free(tmp);						//freed
     }
-    
     free(buf);
-    return stat;
+	statbuf = st;
+	free(st);
+    return 0;
     /////////////////end of Carrie written
 }
 
@@ -206,11 +193,11 @@ int fs_getattr(const char *path, struct stat *statbuf) {
  
  
  /////////////Carrie written function
-int dir_exists_rec(char* path, s3context_t *ctx) {	
-//return -1 on error, 0 if successfully added directory
+int dir_exists_rec(const char* path, s3context_t *ctx) {	
+//return -1 on error, 0 if successfully found directory
 	char* copy_path1 = strdup(path);
 	char* dir = dirname(copy_path1);
-	if((path == "/") || (path==NULL) || (dir==".")) {
+	if(!strcmp(path,"/") || (path==NULL) || !strcmp(dir,".")) {
 		return 0;
 	}	
 	int err = dir_exists_rec(dir, ctx);
@@ -218,9 +205,9 @@ int dir_exists_rec(char* path, s3context_t *ctx) {
 		printf("Well, something went wrong.\n");
 		return -1;
 	}	
-	int rv;
+	//int rv;
 	uint8_t *buffer = NULL;
-    rv = s3fs_get_object(ctx->s3bucket, dir, &buffer, 0, 0);  //1st entry was S3BUCKET
+    s3fs_get_object(ctx->s3bucket, dir, &buffer, 0, 0);  //1st entry was S3BUCKET
     int size = sizeof(buffer)/sizeof(s3dirent_t);
     s3dirent_t* buf = (s3dirent_t*)malloc(sizeof(s3dirent_t)*size); //malloced
     buf = (s3dirent_t *)buffer; //filled in?
@@ -229,9 +216,11 @@ int dir_exists_rec(char* path, s3context_t *ctx) {
 	for(; i<size; i++) {
 		j = is_there(buf[i], path);
 		if(j==1) {
+			free(buf);
 			return 0;
 		} 
 	}
+	free(buf);
 	if(j==0) {
 		return -1;
 	}
@@ -259,29 +248,32 @@ int fs_opendir(const char *path, struct fuse_file_info *fi) {
 int fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset,
          struct fuse_file_info *fi)
 {
+
     fprintf(stderr, "fs_readdir(path=\"%s\", buf=%p, offset=%d)\n",
           path, buf, (int)offset);
     s3context_t *ctx = GET_PRIVATE_DATA;
     
     //////////////////////Carrie written code
     
-    int rv;
+    ssize_t rv;
 	uint8_t *buffer = NULL;
     rv = s3fs_get_object(ctx->s3bucket, path, &buffer, 0, 0);  //1st entry was S3BUCKET
-    if(rv==-1) {
+    if(rv<0) {
     	return -EIO;
     }
     int size = sizeof(buffer)/sizeof(s3dirent_t);
     s3dirent_t* storage = (s3dirent_t*)malloc(sizeof(s3dirent_t)*size); //malloced
     storage = (s3dirent_t *)buffer; //filled in?
 	int i = 0;
-	int j = 0;
+	//int j = 0;
 	for(; i<size; i++) {
 		 if(filler(buf, storage[i].name, NULL, 0) !=0) {
+			free(storage);
 		 	return -ENOMEM;
 		 }
 	}
     ////*****************I am not sure how offset and *fi are supposed to be used....?
+	free(storage);
     //////////////////////
     return 0;
 }
@@ -292,7 +284,7 @@ int fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset
  */
 int fs_releasedir(const char *path, struct fuse_file_info *fi) {
     fprintf(stderr, "fs_releasedir(path=\"%s\")\n", path);
-    s3context_t *ctx = GET_PRIVATE_DATA;
+    //s3context_t *ctx = GET_PRIVATE_DATA;
     
     ////////////////////////Carrie 
     //return -EIO;
@@ -312,7 +304,7 @@ int fs_releasedir(const char *path, struct fuse_file_info *fi) {
  
  
 ////////Carrie and Shreeya written function
-void rec_check(char *path, mode_t mode, s3context_t *ctx) {  
+int rec_check(const char *path, mode_t mode, s3context_t *ctx) {  
 //return -1 on error, 0 if successfully added directory
 
 //	char *dir;
@@ -324,7 +316,7 @@ void rec_check(char *path, mode_t mode, s3context_t *ctx) {
 //	char* copy_path2 = strdup(path);
 	char* dir = dirname(copy_path1);
 
-	if((path == "/") || (path==NULL) || (dir==".")) {
+	if(!strcmp(path,"/") || (path==NULL) || !strcmp(dir,".")) {
 		return 0;
 	}
 
@@ -342,25 +334,15 @@ void rec_check(char *path, mode_t mode, s3context_t *ctx) {
 	
 	uint8_t *buffer = NULL;
     // zeroes as last two args means that we want to retrieve entire object
-    rv = s3fs_get_object(ctx->s3bucket, dir, &buffer, 0, 0);  //1st entry was S3BUCKET
+    rv = (int) s3fs_get_object(ctx->s3bucket, dir, &buffer, 0, 0);  //1st entry was S3BUCKET
     int size = sizeof(buffer)/sizeof(s3dirent_t);
     s3dirent_t* buf = (s3dirent_t*)malloc(sizeof(s3dirent_t)*size); //malloced
     buf = (s3dirent_t *)buffer; //filled in?
-    /*
-    if (rv < 0) {
-        printf("Failure in s3fs_get_object\n");
-    } else if (rv < buf[0].size) {
-        printf("Failed to retrieve entire object (s3fs_get_object %d)\n", rv);
-    } else {
-        printf("Successfully retrieved test object from s3 (s3fs_get_object)\n");
-        if (strcmp((const char *)buffer, test_object) == 0) {
-            printf("Retrieved object looks right.\n");
-        } else {
-            printf("Retrieved object doesn't match what we sent?!\n");
-        }
-    }
-    */
-
+	if(rv<0) {  //error!
+		printf("An error occured retrieving the object from the cloud.\n");
+		free(buf);
+		return -1;
+	}
 	int i = 0;
 	int j = 0;
 	int unused = 0;
@@ -372,6 +354,7 @@ void rec_check(char *path, mode_t mode, s3context_t *ctx) {
 			loc_unused = i;
 		}
 		if(j==1) { //found it, don't need to look any more
+			free(buf);			
 			return 0;
 		}
 	}
@@ -398,7 +381,7 @@ void rec_check(char *path, mode_t mode, s3context_t *ctx) {
     else {
         printf("Successfully put test object in s3 (s3fs_put_object)\n");
     }
-    free(new[0].name); 		//freed
+    //free(new[0].name); 		//freed
     free(new);				//freed
 
 	//now update current directory
@@ -410,42 +393,41 @@ void rec_check(char *path, mode_t mode, s3context_t *ctx) {
     	if (rv2 < 0) {
        	 	printf("Failure in s3fs_put_object\n");
     	} 
-    	else if (rv2 < buf[0].size) {
-        	printf("Failed to upload full test object (s3fs_put_object %d)\n", rv2);
+    	else if (rv2 < ((int) buf[0].size)) {
+        	printf("Failed to upload full test object (s3fs_put_object %zd)\n", rv2);
     	} 
     	else {
         	printf("Successfully put test object in s3 (s3fs_put_object)\n");
     	}
-    	free(copy_path1);					//freed
-    	free(buf[loc_unused].name);			//freed
-    	free(buf);							//freed
-    	return 0; //made new key, updated current cd: all done!	
+    	//free(buf[loc_unused].name);			//freed
+    	//made new key, updated current cd: all done!	
 	}
-	
-	//so there wasn't an unused space....
-	s3dirent_t* new_curdir = malloc(sizeof(s3dirent_t)*(size+1)); //malloc
-	i=0;
-	for(; i<size; i++) { //rewriting info already there
-		new_curdir[i] = buf[i]; //copy over what is there
-	}	
+	else {
+		//so there wasn't an unused space....
+		s3dirent_t* new_curdir = malloc(sizeof(s3dirent_t)*(size+1)); //malloc
+		i=0;
+		for(; i<size; i++) { //rewriting info already there
+			new_curdir[i] = buf[i]; //copy over what is there
+		}	
 		
-	strcpy(new_curdir[i+1].name, path); //malloced
-    new_curdir[i+1].type = 'd';
-    //rest of metadata in new key's '.'
-    rv = s3fs_put_object(ctx->s3bucket, dir, (uint8_t*)new_curdir, sizeof(new_curdir)); //1st entry was S3BUCKET
-    if (rv < 0) {
-        printf("Failure in s3fs_put_object\n");
-    } 
-    else if (rv < new[0].size) {
-        printf("Failed to upload full test object (s3fs_put_object %d)\n", rv);
-    } 
-    else {
-        printf("Successfully put test object in s3 (s3fs_put_object)\n");
-    }	
+		strcpy(new_curdir[i+1].name, path); //malloced
+		new_curdir[i+1].type = 'd';
+		//rest of metadata in new key's '.'
+		rv = s3fs_put_object(ctx->s3bucket, dir, (uint8_t*)new_curdir, sizeof(new_curdir)); //1st entry was S3BUCKET
+		if (rv < 0) {
+		    printf("Failure in s3fs_put_object\n");
+		} 
+		else if (rv < new[0].size) {
+		    printf("Failed to upload full test object (s3fs_put_object %d)\n", rv);
+		} 
+		else {
+		    printf("Successfully put test object in s3 (s3fs_put_object)\n");
+		}
+		//free(new_curdir[i+1].name);
+		free(new_curdir);
+	}	
     free(copy_path1);					//freed
     free(buf);							//freed
-    free(new_curdir[i+1].name);			//freed
-    free(new_curdir);					//freed
 	return 0;	
 }
  
@@ -527,6 +509,8 @@ int fs_rmdir(const char *path) {
 			break;
 		} 
 	}
+	free(copy_path1);
+	free(buf);
 	if(j==0) {
 		printf("For some reason, the directory couldn't be cleared from the parent directory.\n");
 		return -EIO;
@@ -551,7 +535,7 @@ int fs_rmdir(const char *path) {
  */
 int fs_mknod(const char *path, mode_t mode, dev_t dev) {
     fprintf(stderr, "fs_mknod(path=\"%s\", mode=0%3o)\n", path, mode);
-    s3context_t *ctx = GET_PRIVATE_DATA;
+    //s3context_t *ctx = GET_PRIVATE_DATA;
     return -EIO;
 }
 
@@ -570,7 +554,7 @@ int fs_mknod(const char *path, mode_t mode, dev_t dev) {
  */
 int fs_open(const char *path, struct fuse_file_info *fi) {
     fprintf(stderr, "fs_open(path\"%s\")\n", path);
-    s3context_t *ctx = GET_PRIVATE_DATA;
+    //s3context_t *ctx = GET_PRIVATE_DATA;
     return -EIO;
 }
 
@@ -585,7 +569,7 @@ int fs_open(const char *path, struct fuse_file_info *fi) {
 int fs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
     fprintf(stderr, "fs_read(path=\"%s\", buf=%p, size=%d, offset=%d)\n",
           path, buf, (int)size, (int)offset);
-    s3context_t *ctx = GET_PRIVATE_DATA;
+   // s3context_t *ctx = GET_PRIVATE_DATA;
     return -EIO;
 }
 
@@ -599,7 +583,7 @@ int fs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_
 int fs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
     fprintf(stderr, "fs_write(path=\"%s\", buf=%p, size=%d, offset=%d)\n",
           path, buf, (int)size, (int)offset);
-    s3context_t *ctx = GET_PRIVATE_DATA;
+   // s3context_t *ctx = GET_PRIVATE_DATA;
     return -EIO;
 }
 
@@ -619,7 +603,7 @@ int fs_write(const char *path, const char *buf, size_t size, off_t offset, struc
  */
 int fs_release(const char *path, struct fuse_file_info *fi) {
     fprintf(stderr, "fs_release(path=\"%s\")\n", path);
-    s3context_t *ctx = GET_PRIVATE_DATA;
+  //  s3context_t *ctx = GET_PRIVATE_DATA;
     return -EIO;
 }
 
@@ -629,7 +613,7 @@ int fs_release(const char *path, struct fuse_file_info *fi) {
  */
 int fs_rename(const char *path, const char *newpath) {
     fprintf(stderr, "fs_rename(fpath=\"%s\", newpath=\"%s\")\n", path, newpath);
-    s3context_t *ctx = GET_PRIVATE_DATA;
+  //  s3context_t *ctx = GET_PRIVATE_DATA;
     return -EIO;
 }
 
@@ -639,7 +623,7 @@ int fs_rename(const char *path, const char *newpath) {
  */
 int fs_unlink(const char *path) {
     fprintf(stderr, "fs_unlink(path=\"%s\")\n", path);
-    s3context_t *ctx = GET_PRIVATE_DATA;
+  //  s3context_t *ctx = GET_PRIVATE_DATA;
     return -EIO;
 }
 /*
@@ -647,7 +631,7 @@ int fs_unlink(const char *path) {
  */
 int fs_truncate(const char *path, off_t newsize) {
     fprintf(stderr, "fs_truncate(path=\"%s\", newsize=%d)\n", path, (int)newsize);
-    s3context_t *ctx = GET_PRIVATE_DATA;
+  //  s3context_t *ctx = GET_PRIVATE_DATA;
     return -EIO;
 }
 
@@ -659,7 +643,7 @@ int fs_truncate(const char *path, off_t newsize) {
  */
 int fs_ftruncate(const char *path, off_t offset, struct fuse_file_info *fi) {
     fprintf(stderr, "fs_ftruncate(path=\"%s\", offset=%d)\n", path, (int)offset);
-    s3context_t *ctx = GET_PRIVATE_DATA;
+ //   s3context_t *ctx = GET_PRIVATE_DATA;
     return -EIO;
 }
 
@@ -670,7 +654,7 @@ int fs_ftruncate(const char *path, off_t offset, struct fuse_file_info *fi) {
  */
 int fs_access(const char *path, int mask) {
     fprintf(stderr, "fs_access(path=\"%s\", mask=0%o)\n", path, mask);
-    s3context_t *ctx = GET_PRIVATE_DATA;
+  //  s3context_t *ctx = GET_PRIVATE_DATA;
     return 0;
 }
 
