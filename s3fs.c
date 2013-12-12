@@ -187,10 +187,32 @@ void rec_check(char *path, mode_t mode) {
 	char *dir = dirname(path);
 //	char *base = basename(path);
 	rec_check(dir, mode);	
-	uint8_t ** buf; //buf is the base directory.  I think this is malloced.  
-	ssize_t s3fs_get_object(S3BUCKET, dir, buf, 0, 0);
-	(s3dirent_t)buf;
-	int size = sizeof(buf)/sizeof(s3dirent_t);
+//	uint8_t ** buf; //buf is the base directory.  I think this is malloced.  
+//	s3fs_get_object(S3BUCKET, dir, buf, 0, 0);
+	
+	int rv;
+	
+	uint8_t *buffer = NULL;
+    // zeroes as last two args means that we want to retrieve entire object
+    rv = s3fs_get_object(S3BUCKET, dir, &buffer, 0, 0);
+    int size = sizeof(buffer)/sizeof(s3dirent_t);
+    s3dirent_t* buf = (s3dirent_t*)malloc(sizeof(s3dirent_t)*size); //malloced
+    buf = (s3dirent_t *)buffer; //filled in?
+    /*
+    if (rv < 0) {
+        printf("Failure in s3fs_get_object\n");
+    } else if (rv < buf[0].size) {
+        printf("Failed to retrieve entire object (s3fs_get_object %d)\n", rv);
+    } else {
+        printf("Successfully retrieved test object from s3 (s3fs_get_object)\n");
+        if (strcmp((const char *)buffer, test_object) == 0) {
+            printf("Retrieved object looks right.\n");
+        } else {
+            printf("Retrieved object doesn't match what we sent?!\n");
+        }
+    }
+    */
+
 	int i = 0;
 	int j = 0;
 	int unused = 0;
@@ -218,7 +240,7 @@ void rec_check(char *path, mode_t mode) {
     time_t t;
     time(&t);
     new[0].access_time = t;
-    ssize_t rv = s3fs_put_object(S3BUCKET, path, (uint8_t*)new, sizeof(new));
+    rv = s3fs_put_object(S3BUCKET, path, (uint8_t*)new, sizeof(new));
     if (rv < 0) {
         printf("Failure in s3fs_put_object\n");
     } 
@@ -228,22 +250,26 @@ void rec_check(char *path, mode_t mode) {
     else {
         printf("Successfully put test object in s3 (s3fs_put_object)\n");
     }
+    free(new[0].name); 		//freed
+    free(new);				//freed
 
 	//now update current directory
 	if(unused==1) { //a previous directory was 'deleted', so we can use the space	
 		strcpy(buf[loc_unused].name, path); //malloced
 	    buf[loc_unused].type = 'd';
 	    //rest of metadata in other key's '.'
-   	 	ssize_t rv = s3fs_put_object(S3BUCKET, dir, (uint8_t*)buf, sizeof(buf));
-    	if (rv < 0) {
+   	 	ssize_t rv2 = s3fs_put_object(S3BUCKET, dir, (uint8_t*)buf, sizeof(buf));
+    	if (rv2 < 0) {
        	 	printf("Failure in s3fs_put_object\n");
     	} 
-    	else if (rv < buf[0].size) {
-        	printf("Failed to upload full test object (s3fs_put_object %d)\n", rv);
+    	else if (rv2 < buf[0].size) {
+        	printf("Failed to upload full test object (s3fs_put_object %d)\n", rv2);
     	} 
     	else {
         	printf("Successfully put test object in s3 (s3fs_put_object)\n");
     	}
+    	free(buf[loc_unused].name);			//freed
+    	free(buf);							//freed
     	return; //made new key, updated current cd: all done!	
 	}
 	
@@ -257,7 +283,7 @@ void rec_check(char *path, mode_t mode) {
 	strcpy(new_curdir[i+1].name, path); //malloced
     new_curdir[i+1].type = 'd';
     //rest of metadata in new key's '.'
-    ssize_t rv = s3fs_put_object(S3BUCKET, dir, (uint8_t*)new_curdir, sizeof(new_curdir));
+    rv = s3fs_put_object(S3BUCKET, dir, (uint8_t*)new_curdir, sizeof(new_curdir));
     if (rv < 0) {
         printf("Failure in s3fs_put_object\n");
     } 
@@ -267,6 +293,9 @@ void rec_check(char *path, mode_t mode) {
     else {
         printf("Successfully put test object in s3 (s3fs_put_object)\n");
     }	
+    free(buf);							//freed
+    free(new_curdir[i+1].name);			//freed
+    free(new_curdir);					//freed
 	return;	
 }
  
@@ -286,66 +315,7 @@ int fs_mkdir(const char *path, mode_t mode) {
     
     */
     
-    /*
-    char * dirname = dirname(path); 
-    int base_dir_exits = 0;
-    //need to make this a loop through everything in bucket
-    	uint8_t *retrieved_object = NULL;
-    	// zeroes as last two args means that we want to retrieve entire object
-    	rv = s3fs_get_object(S3BUCKET, S3SECRETKEY, &retrieved_object, 0, 0);
-    	if (rv < 0) {
-     	   printf("Failure in s3fs_get_object\n");
-    	} else if (rv < object_length) {
-    	    printf("Failed to retrieve entire object (s3fs_get_object %d)\n", rv);
-    	} else {
-    	    printf("Successfully retrieved test object from s3 (s3fs_get_object)\n");
-        	if (strcmp((const char *)retrieved_object, test_object) == 0) {
-        	    printf("Retrieved object looks right.\n");
-  	      } else {
-    	        printf("Retrieved object doesn't match what we sent?!\n");
-    	    }
-    	}
-    	(s3dirent_t)retrieved_object;
-    	
-    	
-    	if(retrieved_object->name == path) {
-    		printf("Directory already exists at current path.\n");
-    		return;
-    	}
-    	if(retrieved_object->name == dirname) {
-    		if(retrieved_object->type == 'd') {
-  	  			printf("Base directory exists: can make new directory at that location.\n");
-    			base_dir_exists = 1;
-    		}
-    	}
     
-    //end loop
-    
-    if(base_dir_exists == 0) {
-    	printf("Base directory did not exist: cannot make new directory at that location.\n");
-    	return;
-    }
-    
-    
-    
-    
-	s3dirent_t dir; // = malloc(sizeof(s3dirent_t)); //***Does this need to be malloced?
-    strcpy(dir.name, path);
-    strcpy(dir.parent, "/0"); //will have to remember to free these!!! Also might not need parent
-    dir.type = 'd';
-    dir.mode = mode;
-    dir.size = sizeof(dir);
-    ssize_t rv = s3fs_put_object(S3BUCKET, S3SECRETKEY, (uint8_t*)dir, dir.size);
-    if (rv < 0) {
-        printf("Failure in s3fs_put_object\n");
-    } 
-    else if (rv < dir.size) {
-        printf("Failed to upload full test object (s3fs_put_object %d)\n", rv);
-    } 
-    else {
-        printf("Successfully put test object in s3 (s3fs_put_object)\n");
-    }
-    */
     
     return -EIO;
 }
