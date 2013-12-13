@@ -37,6 +37,7 @@ typedef struct {
 	uid_t uid; //user id
 	gid_t gid; //group id
 	time_t access_time; //access time for files
+	dev_t dev;
 //	time_t mod_time; //modification time	 - can add later if helps
 } s3dirent_t;
 	
