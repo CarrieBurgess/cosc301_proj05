@@ -1,19 +1,21 @@
 /*
-The prestigous and awesome authors: Carrie and Shreeya
-The date of glorious completion: COLGATE DAY 13 Dec 2013
-The reasoning behind this wonderous project: required.  And to make a virtualalized directory/ file system that looks localized to the user
+authors: Carrie and Shreeya
+The date of completion: COLGATE DAY 13 Dec 2013
+project: to make a virtualalized directory/ file system that looks localized to the user
 
 
-How to cycle through key/objects in s3: say want /x/y
--- first get root directory, find if there is an x directory (as know full path).  then go to /x, cycle through to make sure y doesn't exist, make new dirent, write to s3, update/ write /x to s3
+Professor Sommers:
+Hardly anything works.  Carrie's computer: virtual machine refuses to test/ work properly.  Shreeya's computer: after clearing everything/ freeing memory, the virtual machine could connect to the internet via firefox, but the terminal refused to do so. 
 
+Summary: we couldn't get anything to work.  Physics kept demanding that we couldn't dedicate the time
+to camp out in a computer lab in McGregory to work on this.  So we could never really test it.  As a 
+consequence, part 1 doesn't even work.  It is close, but we can't find the error, becuase
+we can't debug.  We basically did pseudo-code for some functions in part 2 (after giving up on
+our computers for part 1), so... you can get the concept.
 
-SHREEYA!!!   I tried to block off everything I modified, so if one or both of us is decoding, you can just comment out the appropriate chunks.  Just make sure that there is a "return -EIO" at the end of the function if it needs to return something when checking.
+Really sorry.  We tried valiantly.  Please forgive the lack of completeness.
 
-Things I likely missed:
--freeing everything
--assigning all the components of the s3dirent_t
--error message (especially with the outputs for get_object and put_object)
+-Carrie and Shreeya
 */
 
 
@@ -67,26 +69,24 @@ void *fs_init(struct fuse_conn_info *conn)
 {
     fprintf(stderr, "fs_init --- initializing file system.\n");
     s3context_t *ctx = GET_PRIVATE_DATA;
-    /////////////////Carrie and Shreeya
+
     s3fs_clear_bucket(S3BUCKET);
-    s3dirent_t* root = NULL;// = malloc(sizeof(s3dirent_t)); //malloced
-    strcpy(root->name, "."); //malloced
-    root->type = 'd';
-    root->mode = (S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR);
-    root->size = sizeof(root);
-    root->uid = getuid();
-    root->gid = getgid();
+    s3dirent_t root = {'d', ".", 0, 0, 0, 0, 0, 0};
+
+    root.mode = (S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR);
+    root.size = sizeof(root);
+    root.uid = getuid();
+    root.gid = getgid();
     time_t t;
     time(&t);
-    root->access_time = t;
-    ssize_t rv = s3fs_put_object(ctx->s3bucket, "/", (uint8_t*)root, sizeof(root));	//changed 1st entry from S3BUCKET
+    root.access_time = t;
+    ssize_t rv = s3fs_put_object(ctx->s3bucket, "/", (uint8_t*)(&root), sizeof(root));	//changed 1st entry from S3BUCKET
     if (rv < 0) {
-        printf("Failure in s3fs_put_object\n");
+        printf("---------------------------------Failure in s3fs_put_object\n");
     } 
-    //free(root[0].name);
-    //free(root);
-    return ctx; //****What does this do???
-    ////////////////////////Carrie and Shreeya
+
+    return ctx; 
+
 }
 
 /*
@@ -129,9 +129,7 @@ int fs_getattr(const char *path, struct stat *statbuf) {
     fprintf(stderr, "fs_getattr(path=\"%s\")\n", path);
     s3context_t *ctx = GET_PRIVATE_DATA;  
 	printf("\nget attribute\n");    
-    ///////////////Carrie code
-    //int rv;
-    //first need to check if it is a file or directory:
+  
 	printf("~~~~~~~~~~~`the path is current: %s\n", path);
     char * dircpy = strdup(path); //copying so I don't change the original
     char* dir = dirname(dircpy);
@@ -144,24 +142,32 @@ int fs_getattr(const char *path, struct stat *statbuf) {
 		return -1;
 	}
     int i =0;                              
-	printf("Got the object, malloced.  About to go find correct object in dir key\n");
+	printf("Got the object.  About to go find correct object in dir key, and size= %d\n",size);
+	int check = 0;
     for(; i<size; i++) {
+	 	printf("%s =? %s\n", buf[i].name, path);
     	if(strcmp(buf[i].name, path)==0) {
+			check = 1;
     		break;
     	}
     }
+	if (check) { // found a match
+		printf("----------found match %s = %s\n", buf[i].name, path);
+	}
+	else printf("no match found!\n");
+
     struct stat *st = malloc(sizeof(struct stat));
     if(buf[i].type=='f') { //it was a file, metadata stored here:
 		printf("entered if statement for file\n");    	
 		st->st_mode = buf[i].mode;
     	st->st_uid = buf[i].uid;
     	st->st_gid = buf[i].gid;
-//    	stat->st_rdev = NULL;
+	  	st->st_rdev = 0;
     	st->st_size = (off_t)buf[i].size;
-//    	stat->st_blocks = NULL;
+    	st->st_blocks = 1;
     	st->st_atime = buf[i].access_time;
-//    	stat->st_mtime = NULL;
-//    	stat->st_ctime = NULL;
+	   	st->st_mtime = 0;
+    	st->st_ctime = 0;
     }
     else if(buf[i].type=='d') { //was a directory, go find metadata there
 		printf("entered elseif statement for directory\n");
@@ -175,15 +181,15 @@ int fs_getattr(const char *path, struct stat *statbuf) {
 			return -1;
 		}
     	st->st_mode = tmp[0].mode;
-//    	stat->st_nlink = NULL;
+    	st->st_nlink = 1;
     	st->st_uid = tmp[0].uid;
     	st->st_gid = tmp[0].gid;
-//    	stat->st_rdev = NULL;
+    	st->st_rdev = 0;
     	st->st_size = (off_t)tmp[0].size;
-//    	stat->st_blocks = NULL;
+    	st->st_blocks = 0;
     	st->st_atime = tmp[0].access_time;
-//    	stat->st_mtime = NULL;
-//    	stat->st_ctime = NULL;
+    	st->st_mtime = 0;
+    	st->st_ctime = 0;
 		free(tmp);						//freed
     }
 	printf("Well that was fun.  Something prolly happened.\n");
@@ -346,8 +352,9 @@ Example: if you want /x/y, and only /x exists, then it recursively breaks it dow
 "/", checks that it contains the object "/x", then gets the key "/x", sees there is no object
 "/x/y", creats a key "/x/y", and adds the object "/x/y" to the key "/x".
 */
+
 int rec_check(const char *path, mode_t mode, s3context_t *ctx) {  
-printf("\nREC CHECK\n");    	
+printf("\nREC CHECK\n");     //////////////////////////HELPER FOR MKDIR   	
 //return -1 on error, 0 if successfully added directory
 	char* copy_path1 = strdup(path);
 	char* dir = dirname(copy_path1);
@@ -356,7 +363,7 @@ printf("\nREC CHECK\n");
 	}
 	int err = rec_check(dir, mode, ctx);
 	if(err<0) {
-		printf("Well, something went wrong.\n");
+		printf("---Well, something went wrong IN THE REC_CHECK.\n");
 		return -1;
 	}	
 	s3dirent_t *buf = NULL;
@@ -385,17 +392,17 @@ printf("\nREC CHECK\n");
 	//if got to this point, then object we are looking for doesn't exist/ we have to make it	
 	
 	//make new key and obj
-	s3dirent_t* new =NULL; 
-    strcpy(new[0].name, "."); //malloced
-    new[0].type = 'd';
-    new[0].mode = mode;
-    new[0].size = sizeof(new);
-    new[0].uid = getuid();
-    new[0].gid = getgid();
+	s3dirent_t new ={'d', ".", 0, 0, 0, 0, 0, 0}; 
+
+    //strcpy(new[0].name, "."); //malloced
+    new.mode = mode;
+    new.size = sizeof(new);
+    new.uid = getuid();
+    new.gid = getgid();
     time_t t;
     time(&t);
-    new[0].access_time = t;
-    rv = s3fs_put_object(ctx->s3bucket, path, (uint8_t*)new, sizeof(new));
+    new.access_time = t;
+    int rv = s3fs_put_object(ctx->s3bucket, path, (uint8_t*)&new, sizeof(new));
     //child obj created, put on s3
     if (rv < 0) {
         printf("Failure in s3fs_put_object\n");
@@ -425,20 +432,22 @@ printf("\nREC CHECK\n");
 	}
 	else {
 		//so there wasn't an unused space....
-		s3dirent_t* new_curdir = NULL;// malloc(sizeof(s3dirent_t)*(size+1)); //malloc
+		s3dirent_t* new_curdir = malloc(sizeof(s3dirent_t)*(size+1)); //malloc
 		i=0;
 		for(; i<size; i++) { //rewriting info already there
-			new_curdir[i] = buf[i]; //copy over what is there
+			memcpy(new_curdir+i, buf+i, sizeof(s3dirent_t));
+			//new_curdir[i] = buf[i]; //copy over what is there
 		}		
 		strcpy(new_curdir[i+1].name, path); //malloced
 		new_curdir[i+1].type = 'd';
-   		new_curdir[i+1].mode = mode;
-    	new_curdir[i+1].size = sizeof(new);
-    	new_curdir[i+1].uid = getuid();
-    	new_curdir[i+1].gid = getgid();
+   		new_curdir[i+1].mode = 0;
+    	new_curdir[i+1].size = 0;
+    	new_curdir[i+1].uid = 0;
+    	new_curdir[i+1].gid = 0;
+    	new_curdir[i+1].dev = 0;
     	time_t t;
     	time(&t);
-    	new_curdir[i+1].access_time = t;
+    	new_curdir[i+1].access_time = 0;
 		rv = s3fs_put_object(ctx->s3bucket, dir, (uint8_t*)new_curdir, sizeof(new));
 		//putting updated dir on cloud, with key overwritting old parent directory key
  	  	if (rv < 0) {
@@ -457,7 +466,7 @@ printf("\nREC CHECK\n");
 		} 
 		*/
 		//free(new_curdir[i+1].name);
-		//free(new_curdir);
+		free(new_curdir);
 	}	
     free(copy_path1);					//freed
     free(buf);							//freed
@@ -472,10 +481,15 @@ int fs_mkdir(const char *path, mode_t mode) {
 printf("\nMKDIR\n");    	
     fprintf(stderr, "fs_mkdir(path=\"%s\", mode=0%3o)\n", path, mode);
     s3context_t *ctx = GET_PRIVATE_DATA;
-    mode |= S_IFDIR; //permissions for all directories besides root    
-    ///////////Carrie
-    rec_check(path, mode, ctx);
-    ///////////    
+    mode |= S_IFDIR; 
+
+    int check = rec_check(path, mode, ctx);
+	if(check!=0) {
+		return -EIO;
+	}
+	else {
+		return 0;
+	}
     return -EIO;
 }
 
@@ -563,9 +577,82 @@ printf("\nMKDIR ENDDDD\n");
  * nodes.  You *only* need to handle creation of regular
  * files here.  (See the man page for mknod (2).)
  */
+ 
+ //Carrie
 int fs_mknod(const char *path, mode_t mode, dev_t dev) {
     fprintf(stderr, "fs_mknod(path=\"%s\", mode=0%3o)\n", path, mode);
-    //s3context_t *ctx = GET_PRIVATE_DATA;
+    char* copy_path1 = strdup(path);
+	char* dir = dirname(copy_path1);    
+    s3context_t *ctx = GET_PRIVATE_DATA;
+    s3dirent_t *buf = NULL;
+    int ret_v = (int)s3fs_get_object(ctx->s3bucket, dir, (uint8_t**)&buf, 0, 0); //*buf = parent
+    int size = ret_v/sizeof(s3dirent_t);
+	if(ret_v<0) {  //error!
+		printf("An error occured retrieving the object from the cloud.\n");
+		free(buf);
+		return -1;
+	}
+	int i = 0;
+	int j = 0;
+	int unused = 0;
+	int loc_unused = 0;
+	for(; i<size; i++) {
+		j = is_there(buf[i], path); 
+		if(buf[i].type == 'u') {
+			unused = 1;
+			loc_unused = i;
+		}
+		if(j==1) { //found it, don't need to look any more
+			free(buf);			
+			return 0;
+		}
+	}
+	int a = s3fs_put_object(ctx->s3bucket, path, (uint8_t*)buf, 0); //so for file, just
+	//putting empty object into space.  
+	
+	//now, to update parent directory:
+	if(unused==1) { //a previous object was 'deleted', so we can use the space	
+		strcpy(buf[loc_unused].name, path); //malloced
+	    buf[loc_unused].type = 'f';
+	    buf[loc_unused].mode = mode;
+	    buf[loc_unused].size = 0;
+	    buf[loc_unused].uid = getuid();
+	    buf[loc_unused].gid = getgid();
+	    time_t t;
+	    time(&t);
+	    buf[loc_unused].access_time = t;
+	    buf[loc_unused].dev = dev;
+	    int b = s3fs_put_object(ctx->s3bucket, dir, (int8_t*)buf, ret_v);
+		if(b<0) {
+			printf("Failure to put object on cloud\n");
+		}	
+	}	
+	else {
+		//so there wasn't an unused space....
+		s3dirent_t* new_curdir = NULL;
+		i=0;
+		for(; i<size; i++) { //rewriting info already there
+			new_curdir[i] = buf[i]; //copy over what is there
+		}		
+		strcpy(new_curdir[i+1].name, path); //malloced
+		new_curdir[i+1].type = 'f';
+   		new_curdir[i+1].mode = mode;
+    	new_curdir[i+1].size = ret_v/sizeof(s3dirent_t);
+    	new_curdir[i+1].uid = getuid();
+    	new_curdir[i+1].gid = getgid();
+    	time_t t;
+    	time(&t);
+    	new_curdir[i+1].access_time = t;
+    	new_curdir[i+1].dev = dev;
+		int rv = s3fs_put_object(ctx->s3bucket, dir, (uint8_t*)new_curdir, (a+sizeof(s3dirent_t)));
+		//putting updated dir on cloud, with key overwritting old parent directory key
+ 	  	if (rv < 0) {
+        	printf("Failure in s3fs_put_object\n");
+    	} 
+    	free(new_curdir);
+	}	
+    free(copy_path1);					//freed
+    free(buf);				
     return -EIO;
 }
 
@@ -585,6 +672,7 @@ int fs_mknod(const char *path, mode_t mode, dev_t dev) {
 int fs_open(const char *path, struct fuse_file_info *fi) {
     fprintf(stderr, "fs_open(path\"%s\")\n", path);
     //s3context_t *ctx = GET_PRIVATE_DATA;
+	
     return -EIO;
 }
 
@@ -596,10 +684,16 @@ int fs_open(const char *path, struct fuse_file_info *fi) {
  * on EOF or error, otherwise the rest of the data will be
  * substituted with zeroes.  
  */
+ //Carrie
 int fs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
     fprintf(stderr, "fs_read(path=\"%s\", buf=%p, size=%d, offset=%d)\n",
           path, buf, (int)size, (int)offset);
-   // s3context_t *ctx = GET_PRIVATE_DATA;
+    s3context_t *ctx = GET_PRIVATE_DATA;
+    int ret_v = (int)s3fs_get_object(ctx->s3bucket, path, (uint8_t**)&buf, offset, (offset+size)); 
+    if(ret_v<0) {
+    	printf("You make me sad.\n");
+    }
+    return 0;
     return -EIO;
 }
 
@@ -634,16 +728,52 @@ int fs_write(const char *path, const char *buf, size_t size, off_t offset, struc
 int fs_release(const char *path, struct fuse_file_info *fi) {
     fprintf(stderr, "fs_release(path=\"%s\")\n", path);
   //  s3context_t *ctx = GET_PRIVATE_DATA;
-    return -EIO;
+    return 0;
 }
 
 
 /*
  * Rename a file.
  */
+ //Carrie
 int fs_rename(const char *path, const char *newpath) {
     fprintf(stderr, "fs_rename(fpath=\"%s\", newpath=\"%s\")\n", path, newpath);
-  //  s3context_t *ctx = GET_PRIVATE_DATA;
+    s3context_t *ctx = GET_PRIVATE_DATA;
+ 	s3dirent_t *buf = NULL;
+  	int ret_v = (int)s3fs_get_object(ctx->s3bucket, path, (uint8_t**)&buf, 0, 0); 
+    if(ret_v<0) {
+    	printf("You make me sad.\n");
+    }
+    int ret2 = s3fs_put_object(ctx->s3bucket, newpath, (uint8_t**)&buf, ret_v);
+    if(ret2<0) {
+    	printf("NNOOOOOOOO!!!!!\n");
+    }
+    // put on new path
+    s3fs_remove_object(ctx->s3bucket, path);
+    char* copy_path1 = strdup(path);
+	char* dir = dirname(copy_path1);
+	s3dirent_t *buf2 = NULL;
+	int ret_v2 = (int)s3fs_get_object(ctx->s3bucket, dir, (uint8_t**)&buf2, 0, 0);
+	if(ret_v2<0) {
+		printf("Once upon a time, there was a girl who was a physics major, and physics decided she shouldn't have time for her other required project in a not-physics course.  So.... pseudocode.\n");
+	}
+	int size2 = ret_v2/sizeof(s3dirent_t);
+    if(ret_v2==-1) {
+    	return -EIO;
+    }
+	int i = 0;
+	for(; i<size2; i++) { //find child/ path/ directory that deleted
+		if(is_there(buf2[i], path)==1) {
+			strcpy(buf2[i].name, newpath);
+			break;
+		} 
+	}
+	//put updated dir back in s3
+	int rv3 = s3fs_put_object(ctx->s3bucket, dir, (uint8_t*)buf2, ret_v2); 
+ 	if (rv3 < 0) {
+        printf("Failure in s3fs_put_object\n");
+    } 
+    return 0;
     return -EIO;
 }
 
@@ -651,17 +781,51 @@ int fs_rename(const char *path, const char *newpath) {
 /*
  * Remove a file.
  */
+ //Carrie
 int fs_unlink(const char *path) {
     fprintf(stderr, "fs_unlink(path=\"%s\")\n", path);
-  //  s3context_t *ctx = GET_PRIVATE_DATA;
-    return -EIO;
+    s3context_t *ctx = GET_PRIVATE_DATA;
+  
+    fprintf(stderr, "fs_rename(fpath=\"%s\", newpath=\"%s\")\n", path, newpath);
+    s3context_t *ctx = GET_PRIVATE_DATA;
+    s3fs_remove_object(ctx->s3bucket, path);
+    char* copy_path1 = strdup(path);
+	char* dir = dirname(copy_path1);
+	s3dirent_t *buf2 = NULL;
+	int ret_v2 = (int)s3fs_get_object(ctx->s3bucket, dir, (uint8_t**)&buf2, 0, 0);
+	if(ret_v2<0) {
+		printf("You know what's a good show?  Firefly.  I think I'll watch that over break.\n");
+	}
+	int size2 = ret_v2/sizeof(s3dirent_t);
+    if(ret_v2==-1) {
+    	return -EIO;
+    }
+	int i = 0;
+	for(; i<size2; i++) { //find child/ path/ directory that deleted
+		if(is_there(buf2[i], path)==1) {
+			buf2[i].type = 'u';
+			break;
+		} 
+	}
+	//put updated dir back in s3
+	int rv3 = s3fs_put_object(ctx->s3bucket, dir, (uint8_t*)buf2, ret_v2); 
+ 	if (rv3 < 0) {
+        printf("Failure in s3fs_put_object\n");
+    } 
+    free(buf2);
+    return 0;
 }
 /*
  * Change the size of a file.
  */
 int fs_truncate(const char *path, off_t newsize) {
     fprintf(stderr, "fs_truncate(path=\"%s\", newsize=%d)\n", path, (int)newsize);
-  //  s3context_t *ctx = GET_PRIVATE_DATA;
+    s3context_t *ctx = GET_PRIVATE_DATA;
+    s3dirent_t *buf2 = NULL;
+	s3fs_get_object(ctx->s3bucket, path, (uint8_t**)&buf2, 0, 0);
+	s3fs_put_object(ctx->s3bucket, path, (uint8_t*)buf2, newsize);
+	free(buf2);
+	return 0;
     return -EIO;
 }
 
@@ -673,7 +837,9 @@ int fs_truncate(const char *path, off_t newsize) {
  */
 int fs_ftruncate(const char *path, off_t offset, struct fuse_file_info *fi) {
     fprintf(stderr, "fs_ftruncate(path=\"%s\", offset=%d)\n", path, (int)offset);
- //   s3context_t *ctx = GET_PRIVATE_DATA;
+    s3context_t *ctx = GET_PRIVATE_DATA;
+ 	fs_truncate(path, offset);
+ 	return 0;
     return -EIO;
 }
 
