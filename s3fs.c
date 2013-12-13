@@ -577,6 +577,8 @@ printf("\nMKDIR ENDDDD\n");
  * nodes.  You *only* need to handle creation of regular
  * files here.  (See the man page for mknod (2).)
  */
+ 
+ //Carrie
 int fs_mknod(const char *path, mode_t mode, dev_t dev) {
     fprintf(stderr, "fs_mknod(path=\"%s\", mode=0%3o)\n", path, mode);
     char* copy_path1 = strdup(path);
@@ -682,6 +684,7 @@ int fs_open(const char *path, struct fuse_file_info *fi) {
  * on EOF or error, otherwise the rest of the data will be
  * substituted with zeroes.  
  */
+ //Carrie
 int fs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
     fprintf(stderr, "fs_read(path=\"%s\", buf=%p, size=%d, offset=%d)\n",
           path, buf, (int)size, (int)offset);
@@ -725,13 +728,14 @@ int fs_write(const char *path, const char *buf, size_t size, off_t offset, struc
 int fs_release(const char *path, struct fuse_file_info *fi) {
     fprintf(stderr, "fs_release(path=\"%s\")\n", path);
   //  s3context_t *ctx = GET_PRIVATE_DATA;
-    return -EIO;
+    return 0;
 }
 
 
 /*
  * Rename a file.
  */
+ //Carrie
 int fs_rename(const char *path, const char *newpath) {
     fprintf(stderr, "fs_rename(fpath=\"%s\", newpath=\"%s\")\n", path, newpath);
     s3context_t *ctx = GET_PRIVATE_DATA;
@@ -777,17 +781,48 @@ int fs_rename(const char *path, const char *newpath) {
 /*
  * Remove a file.
  */
+ //Carrie
 int fs_unlink(const char *path) {
     fprintf(stderr, "fs_unlink(path=\"%s\")\n", path);
-  //  s3context_t *ctx = GET_PRIVATE_DATA;
-    return -EIO;
+    s3context_t *ctx = GET_PRIVATE_DATA;
+    s3fs_remove_object(ctx->s3bucket, path);
+    char* copy_path1 = strdup(path);
+	char* dir = dirname(copy_path1);
+	s3dirent_t *buf2 = NULL;
+	int ret_v2 = (int)s3fs_get_object(ctx->s3bucket, dir, (uint8_t**)&buf2, 0, 0);
+	if(ret_v2<0) {
+		printf("You know what's a good show?  Firefly.  I think I'll watch that over break.\n");
+	}
+	int size2 = ret_v2/sizeof(s3dirent_t);
+    if(ret_v2==-1) {
+    	return -EIO;
+    }
+	int i = 0;
+	for(; i<size2; i++) { //find child/ path/ directory that deleted
+		if(is_there(buf2[i], path)==1) {
+			buf2[i].type = 'u';
+			break;
+		} 
+	}
+	//put updated dir back in s3
+	int rv3 = s3fs_put_object(ctx->s3bucket, dir, (uint8_t*)buf2, ret_v2); 
+ 	if (rv3 < 0) {
+        printf("Failure in s3fs_put_object\n");
+    } 
+    free(buf2);
+    return 0;
 }
 /*
  * Change the size of a file.
  */
 int fs_truncate(const char *path, off_t newsize) {
     fprintf(stderr, "fs_truncate(path=\"%s\", newsize=%d)\n", path, (int)newsize);
-  //  s3context_t *ctx = GET_PRIVATE_DATA;
+    s3context_t *ctx = GET_PRIVATE_DATA;
+    s3dirent_t *buf2 = NULL;
+	s3fs_get_object(ctx->s3bucket, path, (uint8_t**)&buf2, 0, 0);
+	s3fs_put_object(ctx->s3bucket, path, (uint8_t*)buf2, newsize);
+	free(buf2);
+	return 0;
     return -EIO;
 }
 
@@ -799,7 +834,9 @@ int fs_truncate(const char *path, off_t newsize) {
  */
 int fs_ftruncate(const char *path, off_t offset, struct fuse_file_info *fi) {
     fprintf(stderr, "fs_ftruncate(path=\"%s\", offset=%d)\n", path, (int)offset);
- //   s3context_t *ctx = GET_PRIVATE_DATA;
+  //  s3context_t *ctx = GET_PRIVATE_DATA;
+ 	fs_truncate(path, offset);
+ 	return 0;
     return -EIO;
 }
 
