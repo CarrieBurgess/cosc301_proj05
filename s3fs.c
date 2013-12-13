@@ -69,7 +69,7 @@ void *fs_init(struct fuse_conn_info *conn)
     s3context_t *ctx = GET_PRIVATE_DATA;
 
     s3fs_clear_bucket(S3BUCKET);
-    s3dirent_t root = {'d', ".", 0, 0, 0, 0, 0};
+    s3dirent_t root = {'d', ".", 0, 0, 0, 0, 0, 0};
 
     root.mode = (S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR);
     root.size = sizeof(root);
@@ -390,7 +390,7 @@ printf("\nREC CHECK\n");     //////////////////////////HELPER FOR MKDIR
 	//if got to this point, then object we are looking for doesn't exist/ we have to make it	
 	
 	//make new key and obj
-	s3dirent_t new ={'d', ".", 0, 0, 0, 0, 0}; 
+	s3dirent_t new ={'d', ".", 0, 0, 0, 0, 0, 0}; 
 
 
     //strcpy(new[0].name, "."); //malloced
@@ -582,6 +582,9 @@ int fs_mknod(const char *path, mode_t mode, dev_t dev) {
 }
 
 
+
+
+
 /* 
  * File open operation
  * No creation, or truncation flags (O_CREAT, O_EXCL, O_TRUNC)
@@ -594,9 +597,39 @@ int fs_mknod(const char *path, mode_t mode, dev_t dev) {
  * (In stages 1 and 2, you are advised to keep this function very,
  * very simple.)
  */
+
 int fs_open(const char *path, struct fuse_file_info *fi) {
     fprintf(stderr, "fs_open(path\"%s\")\n", path);
-    //s3context_t *ctx = GET_PRIVATE_DATA;
+    s3context_t *ctx = GET_PRIVATE_DATA;
+////////////////	
+	char * dircpy = strdup(path);
+    char* dir = dirname(dircpy);
+    s3dirent_t *buf = NULL;
+    int rv = (int)s3fs_get_object(ctx->s3bucket, dir, (uint8_t**)&buf, 0, 0);
+	if(rv<0) {
+		printf("File is not in the directory.\n");
+		free(dircpy);
+		return -1;
+	}
+ 
+    int size = rv/sizeof(s3dirent_t);
+    int i =0; 
+	int check = 0;                             
+    for(; i<size; i++) {
+	 	//printf("%s =? %s\n", buf[i].name, path);
+    	if(strcmp(buf[i].name, path)==0) {
+			check = 1;
+    		break;
+    	}
+    }
+	if (check) { //file is there but still check for attribute
+		if (buf[i].type=='f') {
+			free(dircpy);
+			return 0; //is a file 
+		}
+	}
+	free(dircpy);
+////////////////
     return -EIO;
 }
 
@@ -624,8 +657,60 @@ int fs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_
  */
 int fs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
     fprintf(stderr, "fs_write(path=\"%s\", buf=%p, size=%d, offset=%d)\n",
-          path, buf, (int)size, (int)offset);
-   // s3context_t *ctx = GET_PRIVATE_DATA;
+  		    path, buf, (int)size, (int)offset);
+  	s3context_t *ctx = GET_PRIVATE_DATA;
+//////
+
+	char * dircpy = strdup(path);
+    char* dir = dirname(dircpy);
+    s3dirent_t *buff = NULL;
+    int rv = (int)s3fs_get_object(ctx->s3bucket, dir, (uint8_t**)&buff, 0, 0);
+	if(rv<0) {
+		printf("File is not in the directory.\n");
+		free(dircpy);
+		return -1;
+	}
+    int s = rv/sizeof(s3dirent_t);
+    int i =0; 
+	int check = 0;                             
+    for(; i<s; i++) {
+	 	//printf("%s =? %s\n", buf[i].name, path);
+    	if(strcmp(buff[i].name, path)==0) {
+			check = 1;
+    		break;
+    	}
+    }
+	if (check) { //file is there but still check for attribute
+		if (buff[i].type=='f') {
+			free(dircpy);
+		//file is there read it now.....
+		
+		int omg = 1;
+		int start = 0;
+		while (omg>0) {
+			omg = s3fs_get_object(ctx->s3bucket, dir, (uint8_t**)&buff, start, 1024);
+			start = start + omg; //find total #of bytes
+		}  
+		start = start + (int)size; //total size to be pushed into the file
+		omg = 1;
+		char * file_buffer = malloc(sizeof(char)*start);
+		while (omg>0) { //read file again to assign it to the 
+			omg = s3fs_get_object(ctx->s3bucket, dir, (uint8_t**)&buff, start, 1024);
+			strcpy(file_buffer, buff);
+		}  
+		strcpy(file_buffer, buf); //copy the write buffer
+		//read each 1024 buffers and keep adding it to a giant buffer and then send the giant buffer to the put
+
+			//ssize_t srv = s3fs_put_object(ctx->s3bucket, path, (uint8_t*)(buf), sizeof(buf));	//changed 1st entry from S3BUCKET
+    //if (srv < 0) {
+      //  printf("---------------------------------Failure in s3fs_put_object\n");
+    //} 
+			return 0; //put stuff on file
+		}
+	}
+	free(dircpy);
+	
+//////	
     return -EIO;
 }
 
