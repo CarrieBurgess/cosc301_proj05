@@ -135,7 +135,7 @@ the file ``env.sh``.  Type ``env | grep S3``.  You should see something like::
     S3_ACCESS_KEY_ID=AKkasdf323kasdf
     S3_SECRET_ACCESS_KEY=234jalskdjflajsjfiwhefiahsdf
     S3_BUCKET=edu.colgate.cosc301.username
-
+sed
 (Note that your secret s3 information - key ID and secret access key - will be
 different (the ones above are garbage).  Note also that the last line should
 list your username as the last component in the ``S3_BUCKET`` name.)
@@ -146,7 +146,7 @@ If all that worked, try one more test to verify you're up and ready to go::
 
 This command should use the ``s3`` program (installed as part of compiling and installing ``libs3-2.0``) and list the contents of your bucket on S3.  It should be initially empty, but the command should still succeed.
 
-If you type ``make`` in your project folder, the skeleton code for your file system, as well as a test program named ``libs3_wrapper_test`` will be compiled.  Running the latter program (``./libs3_wrapper_test``) will cause some actions to take place with your bucket (a little object is written, then read back, then removed).
+If you type ``make`` in your project folder, the skeleton code for your file system, as well as a test program named ``libs3_wrapper_test`` will be compiled.  Running the latter program (``./libs3_wrapper_test``) will cause some actions to take place with your bucket a little object is written, then read back, then removed).
 
 **Please note**: before you use Amazon S3 in testing, you will *always* need to type ``. ./env.sh`` to set up your shell environment.  You'll need to do this for every shell you're testing in.
 

@@ -394,6 +394,7 @@ printf("\nREC CHECK\n");     //////////////////////////HELPER FOR MKDIR
 	//make new key and obj
 	s3dirent_t new ={'d', ".", 0, 0, 0, 0, 0, 0}; 
 
+
     //strcpy(new[0].name, "."); //malloced
     new.mode = mode;
     new.size = sizeof(new);
@@ -622,7 +623,7 @@ int fs_mknod(const char *path, mode_t mode, dev_t dev) {
 	    time(&t);
 	    buf[loc_unused].access_time = t;
 	    buf[loc_unused].dev = dev;
-	    int b = s3fs_put_object(ctx->s3bucket, dir, (int8_t*)buf, ret_v);
+	    int b = s3fs_put_object(ctx->s3bucket, dir, (int8_t**)buf, ret_v);
 		if(b<0) {
 			printf("Failure to put object on cloud\n");
 		}	
@@ -657,6 +658,9 @@ int fs_mknod(const char *path, mode_t mode, dev_t dev) {
 }
 
 
+
+
+
 /* 
  * File open operation
  * No creation, or truncation flags (O_CREAT, O_EXCL, O_TRUNC)
@@ -669,10 +673,40 @@ int fs_mknod(const char *path, mode_t mode, dev_t dev) {
  * (In stages 1 and 2, you are advised to keep this function very,
  * very simple.)
  */
+//shreeya
 int fs_open(const char *path, struct fuse_file_info *fi) {
     fprintf(stderr, "fs_open(path\"%s\")\n", path);
-    //s3context_t *ctx = GET_PRIVATE_DATA;
-	
+
+    s3context_t *ctx = GET_PRIVATE_DATA;
+////////////////	
+	char * dircpy = strdup(path);
+    char* dir = dirname(dircpy);
+    s3dirent_t *buf = NULL;
+    int rv = (int)s3fs_get_object(ctx->s3bucket, dir, (uint8_t**)&buf, 0, 0);
+	if(rv<0) {
+		printf("File is not in the directory.\n");
+		free(dircpy);
+		return -1;
+	}
+ 
+    int size = rv/sizeof(s3dirent_t);
+    int i =0; 
+	int check = 0;                             
+    for(; i<size; i++) {
+	 	//printf("%s =? %s\n", buf[i].name, path);
+    	if(strcmp(buf[i].name, path)==0) {
+			check = 1;
+    		break;
+    	}
+    }
+	if (check) { //file is there but still check for attribute
+		if (buf[i].type=='f') {
+			free(dircpy);
+			return 0; //is a file 
+		}
+	}
+	free(dircpy);
+////////////////
     return -EIO;
 }
 
@@ -703,11 +737,80 @@ int fs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_
  *
  * Write should return exactly the number of bytes requested
  * except on error.
- */
+ *///shreeya
 int fs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
     fprintf(stderr, "fs_write(path=\"%s\", buf=%p, size=%d, offset=%d)\n",
-          path, buf, (int)size, (int)offset);
-   // s3context_t *ctx = GET_PRIVATE_DATA;
+  		    path, buf, (int)size, (int)offset);
+  	s3context_t *ctx = GET_PRIVATE_DATA;
+//////
+
+	char * dircpy = strdup(path);
+    char* dir = dirname(dircpy);
+    s3dirent_t *buff = NULL;
+    int rv = (int)s3fs_get_object(ctx->s3bucket, dir, (uint8_t**)&buff, 0, 0);
+	if(rv<0) {
+		printf("File is not in the directory.\n");
+		free(dircpy);
+		return -1;
+	}
+    int s = rv/sizeof(s3dirent_t);
+    int i =0; 
+	int check = 0;                             
+    for(; i<s; i++) {
+	 	//printf("%s =? %s\n", buf[i].name, path);
+    	if(strcmp(buff[i].name, path)==0) {
+			check = 1;
+    		break;
+    	}
+    }
+	if (check) { //file is there but still check for attribute
+		if (buff[i].type=='f') {
+			free(dircpy);
+		//file is here read it now.....
+		
+		int omg = 1;
+		int start = 0;
+		char *str = NULL;
+		while (omg>0) {
+			omg = s3fs_get_object(ctx->s3bucket, dir, (uint8_t**)&str, start, 1024);
+			start = start + omg; //find total #of bytes
+		}  
+		if(offset>(start+1)) return -1; //cannot add beyond EOF
+		start = start + (int)size; //total size to be pushed into the file
+		omg = 1;
+		char * file_buffer = malloc(sizeof(char)*start);
+		start = 0;
+		int offset_check = 0;
+		while (omg>0) { //read file again to assign it to the 
+			omg = s3fs_get_object(ctx->s3bucket, dir, (uint8_t**)&str, start, 1024);
+///////////////////////////come back here
+			start = start + omg;
+			if (!offset_check) {
+				if (start<(int)offset-1024) { //will have to read until the offset then copy in all the buf then move along with rest of file content
+					int offset_size = offset%1024;
+					strncpy(file_buffer,str,(offset_size));
+					strcpy(file_buffer,buf); //write the file
+					strncpy(file_buffer, str+offset_size*4, 1024-offset_size); //copy the rest
+					offset_check = 1; //when
+				}
+			else strcpy(file_buffer, str);
+			}
+		}  
+		
+		if (!offset_check) strcpy(file_buffer, buf); //copy the write buffer at the end if have to attach something at the end
+		//read each 1024 buffers and keep adding it to a giant buffer and then send the giant buffer to the put
+
+			//ssize_t srv = s3fs_put_object(ctx->s3bucket, path, (uint8_t*)(buf), sizeof(buf));	//changed 1st entry from S3BUCKET
+    //if (srv < 0) {
+      //  printf("---------------------------------Failure in s3fs_put_object\n");
+    //}    
+			free(file_buffer);
+			return 0; //put stuff on file
+		}
+	}
+	free(dircpy);
+	
+//////	
     return -EIO;
 }
 
@@ -740,11 +843,11 @@ int fs_rename(const char *path, const char *newpath) {
     fprintf(stderr, "fs_rename(fpath=\"%s\", newpath=\"%s\")\n", path, newpath);
     s3context_t *ctx = GET_PRIVATE_DATA;
  	s3dirent_t *buf = NULL;
-  	int ret_v = (int)s3fs_get_object(ctx->s3bucket, path, (uint8_t**)&buf, 0, 0); 
+  	int ret_v = (int)s3fs_get_object(ctx->s3bucket, path, (uint8_t*)&buf, 0, 0); 
     if(ret_v<0) {
     	printf("You make me sad.\n");
     }
-    int ret2 = s3fs_put_object(ctx->s3bucket, newpath, (uint8_t**)&buf, ret_v);
+    int ret2 = s3fs_put_object(ctx->s3bucket, newpath, (uint8_t*)&buf, (ssize_t)ret_v);
     if(ret2<0) {
     	printf("NNOOOOOOOO!!!!!\n");
     }
@@ -784,9 +887,6 @@ int fs_rename(const char *path, const char *newpath) {
  //Carrie
 int fs_unlink(const char *path) {
     fprintf(stderr, "fs_unlink(path=\"%s\")\n", path);
-    s3context_t *ctx = GET_PRIVATE_DATA;
-  
-    fprintf(stderr, "fs_rename(fpath=\"%s\", newpath=\"%s\")\n", path, newpath);
     s3context_t *ctx = GET_PRIVATE_DATA;
     s3fs_remove_object(ctx->s3bucket, path);
     char* copy_path1 = strdup(path);
@@ -837,7 +937,7 @@ int fs_truncate(const char *path, off_t newsize) {
  */
 int fs_ftruncate(const char *path, off_t offset, struct fuse_file_info *fi) {
     fprintf(stderr, "fs_ftruncate(path=\"%s\", offset=%d)\n", path, (int)offset);
-    s3context_t *ctx = GET_PRIVATE_DATA;
+  //  s3context_t *ctx = GET_PRIVATE_DATA;
  	fs_truncate(path, offset);
  	return 0;
     return -EIO;
