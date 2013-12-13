@@ -743,7 +743,7 @@ int fs_rename(const char *path, const char *newpath) {
     	printf("NNOOOOOOOO!!!!!\n");
     }
     // put on new path
-    int s3fs_remove_object(ctx->s3bucket, path);
+    s3fs_remove_object(ctx->s3bucket, path);
     char* copy_path1 = strdup(path);
 	char* dir = dirname(copy_path1);
 	s3dirent_t *buf2 = NULL;

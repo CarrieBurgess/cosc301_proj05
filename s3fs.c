@@ -1,19 +1,21 @@
 /*
-The prestigous and awesome authors: Carrie and Shreeya
-The date of glorious completion: COLGATE DAY 13 Dec 2013
-The reasoning behind this wonderous project: required.  And to make a virtualalized directory/ file system that looks localized to the user
+authors: Carrie and Shreeya
+The date of completion: COLGATE DAY 13 Dec 2013
+project: to make a virtualalized directory/ file system that looks localized to the user
 
 
-How to cycle through key/objects in s3: say want /x/y
--- first get root directory, find if there is an x directory (as know full path).  then go to /x, cycle through to make sure y doesn't exist, make new dirent, write to s3, update/ write /x to s3
+Professor Sommers:
+Hardly anything works.  Carrie's computer: virtual machine refuses to test/ work properly.  Shreeya's computer: after clearing everything/ freeing memory, the virtual machine could connect to the internet via firefox, but the terminal refused to do so. 
 
+Summary: we couldn't get anything to work.  Physics kept demanding that we couldn't dedicate the time
+to camp out in a computer lab in McGregory to work on this.  So we could never really test it.  As a 
+consequence, part 1 doesn't even work.  It is close, but we can't find the error, becuase
+we can't debug.  We basically did pseudo-code for some functions in part 2 (after giving up on
+our computers for part 1), so... you can get the concept.
 
-SHREEYA!!!   I tried to block off everything I modified, so if one or both of us is decoding, you can just comment out the appropriate chunks.  Just make sure that there is a "return -EIO" at the end of the function if it needs to return something when checking.
+Really sorry.  We tried valiantly.  Please forgive the lack of completeness.
 
-Things I likely missed:
--freeing everything
--assigning all the components of the s3dirent_t
--error message (especially with the outputs for get_object and put_object)
+-Carrie and Shreeya
 */
 
 
