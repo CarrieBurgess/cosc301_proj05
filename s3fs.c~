@@ -69,23 +69,12 @@ void *fs_init(struct fuse_conn_info *conn)
     s3context_t *ctx = GET_PRIVATE_DATA;
 
     s3fs_clear_bucket(S3BUCKET);
-<<<<<<< HEAD
-    s3dirent_t* root = NULL;// = malloc(sizeof(s3dirent_t)); //malloced
-    strcpy(root->name, "."); //malloced
-    root->type = 'd';
-    root->mode = (S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR);
-    root->size = sizeof(root);
-    root->uid = getuid();
-    root->gid = getgid();
-    root->dev = 0;
-=======
-    s3dirent_t root = {'d', ".", 0, 0, 0, 0, 0};
+    s3dirent_t root = {'d', ".", 0, 0, 0, 0, 0, 0};
 
     root.mode = (S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR);
     root.size = sizeof(root);
     root.uid = getuid();
     root.gid = getgid();
->>>>>>> 4f519caad448b04d577eb5ed975a75351d744751
     time_t t;
     time(&t);
     root.access_time = t;
@@ -401,25 +390,13 @@ printf("\nREC CHECK\n");     //////////////////////////HELPER FOR MKDIR
 	//if got to this point, then object we are looking for doesn't exist/ we have to make it	
 	
 	//make new key and obj
-<<<<<<< HEAD
-	s3dirent_t* new =NULL; 
-    strcpy(new[0].name, "."); //malloced
-    new[0].type = 'd';
-    new[0].mode = mode;
-    new[0].size = sizeof(new);
-    new[0].uid = getuid();
-    new[0].gid = getgid();
-    new[0].dev = 0;
-=======
-	s3dirent_t new ={'d', ".", 0, 0, 0, 0, 0}; 
-
+	s3dirent_t new ={'d', ".", 0, 0, 0, 0, 0, 0}; 
 
     //strcpy(new[0].name, "."); //malloced
     new.mode = mode;
     new.size = sizeof(new);
     new.uid = getuid();
     new.gid = getgid();
->>>>>>> 4f519caad448b04d577eb5ed975a75351d744751
     time_t t;
     time(&t);
     new.access_time = t;
@@ -656,14 +633,14 @@ int fs_mknod(const char *path, mode_t mode, dev_t dev) {
 		strcpy(new_curdir[i+1].name, path); //malloced
 		new_curdir[i+1].type = 'f';
    		new_curdir[i+1].mode = mode;
-    	new_curdir[i+1].size = sizeof(new);
+    	new_curdir[i+1].size = ret_v/sizeof(s3dirent_t);
     	new_curdir[i+1].uid = getuid();
     	new_curdir[i+1].gid = getgid();
     	time_t t;
     	time(&t);
     	new_curdir[i+1].access_time = t;
     	new_curdir[i+1].dev = dev;
-		rv = s3fs_put_object(ctx->s3bucket, dir, (uint8_t*)new_curdir, (a+sizeof(s3dirent_t)));
+		int rv = s3fs_put_object(ctx->s3bucket, dir, (uint8_t*)new_curdir, (a+sizeof(s3dirent_t)));
 		//putting updated dir on cloud, with key overwritting old parent directory key
  	  	if (rv < 0) {
         	printf("Failure in s3fs_put_object\n");
@@ -707,7 +684,11 @@ int fs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_
     fprintf(stderr, "fs_read(path=\"%s\", buf=%p, size=%d, offset=%d)\n",
           path, buf, (int)size, (int)offset);
     s3context_t *ctx = GET_PRIVATE_DATA;
-    
+    int ret_v = (int)s3fs_get_object(ctx->s3bucket, path, (uint8_t**)&buf, offset, (offset+size)); 
+    if(ret_v<0) {
+    	printf("You make me sad.\n");
+    }
+    return 0;
     return -EIO;
 }
 
@@ -751,7 +732,42 @@ int fs_release(const char *path, struct fuse_file_info *fi) {
  */
 int fs_rename(const char *path, const char *newpath) {
     fprintf(stderr, "fs_rename(fpath=\"%s\", newpath=\"%s\")\n", path, newpath);
-  //  s3context_t *ctx = GET_PRIVATE_DATA;
+    s3context_t *ctx = GET_PRIVATE_DATA;
+ 	s3dirent_t *buf = NULL;
+  	int ret_v = (int)s3fs_get_object(ctx->s3bucket, path, (uint8_t**)&buf, 0, 0); 
+    if(ret_v<0) {
+    	printf("You make me sad.\n");
+    }
+    int ret2 = s3fs_put_object(ctx->s3bucket, newpath, (uint8_t**)&buf, ret_v);
+    if(ret2<0) {
+    	printf("NNOOOOOOOO!!!!!\n");
+    }
+    // put on new path
+    int s3fs_remove_object(ctx->s3bucket, path);
+    char* copy_path1 = strdup(path);
+	char* dir = dirname(copy_path1);
+	s3dirent_t *buf2 = NULL;
+	int ret_v2 = (int)s3fs_get_object(ctx->s3bucket, dir, (uint8_t**)&buf2, 0, 0);
+	if(ret_v2<0) {
+		printf("Once upon a time, there was a girl who was a physics major, and physics decided she shouldn't have time for her other required project in a not-physics course.  So.... pseudocode.\n");
+	}
+	int size2 = ret_v2/sizeof(s3dirent_t);
+    if(ret_v2==-1) {
+    	return -EIO;
+    }
+	int i = 0;
+	for(; i<size2; i++) { //find child/ path/ directory that deleted
+		if(is_there(buf2[i], path)==1) {
+			strcpy(buf2[i].name, newpath);
+			break;
+		} 
+	}
+	//put updated dir back in s3
+	int rv3 = s3fs_put_object(ctx->s3bucket, dir, (uint8_t*)buf2, ret_v2); 
+ 	if (rv3 < 0) {
+        printf("Failure in s3fs_put_object\n");
+    } 
+    return 0;
     return -EIO;
 }
 
